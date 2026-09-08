@@ -24,7 +24,7 @@ def main():
                'import easyRpc', '', 'public struct EasyRpcMethod { public let service: String; public let name: String; public let path: String; public let serverStream: Bool; public init(_ s:String,_ n:String,_ p:String,_ ss:Bool){service=s;name=n;path=p;serverStream=ss} }',
                '', 'public let easyRpcMethodSpecs: [EasyRpcMethod] = [']
         for (svc,name,path,ss) in ms:
-            lines.append(f'  EasyRpcMethod("{svc}","{name}","{path}",{ss}),')
+            lines.append(f'  EasyRpcMethod("{svc}","{name}","{path}",{str(ss).lower()}),')
         lines.append(']')
         lines.append('')
         content='\n'.join(lines)
