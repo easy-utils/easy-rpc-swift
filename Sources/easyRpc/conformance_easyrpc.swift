@@ -6,24 +6,24 @@ public final class ConformanceServiceClient {
   public init(_ t: any Transport) { self.t = t }
 
   public func health(req: Easyrpc_Conformance_V1_HealthRequest) async throws -> Easyrpc_Conformance_V1_HealthResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Health", body: try req.serializedData()))
+    let res = try await t.send(Request(url: "/v1/health", body: try req.serializedData()))
     if let e = res.error { throw e }
     return try Easyrpc_Conformance_V1_HealthResponse(serializedBytes: res.body)
   }
 
   public func echo(req: Easyrpc_Conformance_V1_EchoRequest) async throws -> Easyrpc_Conformance_V1_EchoResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Echo", body: try req.serializedData()))
+    let res = try await t.send(Request(url: "/v1/echo", body: try req.serializedData()))
     if let e = res.error { throw e }
     return try Easyrpc_Conformance_V1_EchoResponse(serializedBytes: res.body)
   }
 
   public func count(req: Easyrpc_Conformance_V1_CountRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_CountResponse, Error>
-  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/Count", body: try req.serializedData()))
+  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/v1/count", body: try req.serializedData()))
     while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_CountResponse(serializedBytes: msg)) }
     cont.finish() } catch { cont.finish(throwing: error) } } } }
 
   public func fail(req: Easyrpc_Conformance_V1_FailRequest) async throws -> Easyrpc_Conformance_V1_FailResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Fail", body: try req.serializedData()))
+    let res = try await t.send(Request(url: "/v1/fail", body: try req.serializedData()))
     if let e = res.error { throw e }
     return try Easyrpc_Conformance_V1_FailResponse(serializedBytes: res.body)
   }
