@@ -7,13 +7,15 @@ import FoundationNetworking
 
 final class InteropTests: XCTestCase {
     func testEchoUnary() async throws {
-        let t = URLSessionTransport(base: "http://127.0.0.1:18888")
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let t = URLSessionTransport(base: base)
         let c = ConformanceServiceClient(t)
         let out = try await c.echo(req: Easyrpc_Conformance_V1_EchoRequest.with { $0.input = "hi" })
         XCTAssertEqual(out.output, "echo:hi")
     }
     func testCountStream() async throws {
-        let t = URLSessionTransport(base: "http://127.0.0.1:18888")
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let t = URLSessionTransport(base: base)
         let c = ConformanceServiceClient(t)
         var idx: [Int] = []
         let stream = try await c.count(req: Easyrpc_Conformance_V1_CountRequest.with { $0.count = 3 })
