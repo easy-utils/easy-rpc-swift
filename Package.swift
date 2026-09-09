@@ -9,12 +9,14 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.28.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
+        .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.9.0"),
     ],
     targets: [
         .target(name: "easyRpc", dependencies: [
             .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             .product(name: "NIO", package: "swift-nio"),
             .product(name: "NIOHTTP1", package: "swift-nio"),
+            .product(name: "AsyncHTTPClient", package: "async-http-client"),
         ], path: "Sources/easyRpc"),
         .testTarget(name: "easyRpcTests", dependencies: ["easyRpc"], path: "Tests/easyRpcTests"),
     ]
