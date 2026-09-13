@@ -37,8 +37,17 @@ public struct AsyncHTTPClientTransport: Transport, Sendable {
         var collected = try await resp.body.collect(upTo: 4 * 1024 * 1024);
         let bytes = collected.readBytes(length: collected.readableBytes) ?? []
         let s = Int(resp.status.code)
-        return Response(status: s, headers: [:], body: Data(bytes),
-                        error: s >= 300 ? RPCError(code: connectFromStatus(s), message: String(data: Data(bytes), encoding: .utf8) ?? "") : nil)
+        let hdrs = Dictionary(uniqueKeysWithValues: resp.headers.map { ($0.name.lowercased(), [$0.value]) })
+        return Response(status: s, headers: hdrs, body: Data(bytes),
+                        error: s >= 300 ? rpcError(status: s, headers: resp.headers, body: Data(bytes)) : nil)
+    }
+
+    /// Reconstruct the exact RPCError from connect-code/connect-error headers.
+    private func rpcError(status: Int, headers: HTTPHeaders, body: Data) -> RPCError {
+        if let c = headers.first(name: "connect-code"), let code = Int(c) {
+            return RPCError(code: code, message: headers.first(name: "connect-error") ?? "")
+        }
+        return RPCError(code: connectFromStatus(status), message: String(data: body, encoding: .utf8) ?? "")
     }
 
     public func openStream(_ req: Request) async throws -> any Stream {
@@ -53,7 +62,7 @@ public struct AsyncHTTPClientTransport: Transport, Sendable {
         if let b = req.body { r.body = .bytes(ByteBuffer(bytes: [UInt8](b))) }
         let resp = try await client.execute(r, timeout: .seconds(30))
         let s = Int(resp.status.code)
-        if s >= 300 { throw RPCError(code: connectFromStatus(s), message: "http \(s)") }
+        if s >= 300 { throw rpcError(status: s, headers: resp.headers, body: Data()) }
         var collected = try await resp.body.collect(upTo: 4 * 1024 * 1024);
         let bytes = collected.readBytes(length: collected.readableBytes) ?? []
         return BufferedStream(data: Data(bytes))

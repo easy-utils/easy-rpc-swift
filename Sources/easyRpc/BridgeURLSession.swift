@@ -17,10 +17,12 @@ public final class URLSessionTransport: Transport, @unchecked Sendable {
         r.httpMethod = req.method
         r.httpBody = req.body
         r.setValue("application/proto", forHTTPHeaderField: "content-type")
+        for (k, vs) in req.headers { for v in vs { r.setValue(v, forHTTPHeaderField: k) } }
         let (data, resp) = try await session.data(for: r)
-        let s = (resp as! HTTPURLResponse).statusCode
-        return Response(status: s, headers: [:], body: data,
-                        error: s >= 300 ? RPCError(code: connectFromStatus(s), message: String(data: data, encoding: .utf8) ?? "") : nil)
+        let http = resp as! HTTPURLResponse
+        let s = http.statusCode
+        return Response(status: s, headers: http.allHeaderFields as? [String: [String]] ?? [:], body: data,
+                        error: s >= 300 ? rpcError(status: s, headers: http.allHeaderFields, body: data) : nil)
     }
 
     public func openStream(_ req: Request) async throws -> any Stream {
@@ -28,12 +30,24 @@ public final class URLSessionTransport: Transport, @unchecked Sendable {
         r.httpMethod = req.method
         r.httpBody = req.body
         r.setValue("application/connect+proto", forHTTPHeaderField: "content-type")
+        for (k, vs) in req.headers { for v in vs { r.setValue(v, forHTTPHeaderField: k) } }
+        // URLSession.data buffers the whole body, but the SERVER now responds
+        // 200 immediately and streams frames; on Linux URLSession buffers until
+        // the connection closes, so for live incrementality use
+        // AsyncHTTPClientTransport instead. This bridge still works for
+        // short/closed streams.
         let (full, resp) = try await session.data(for: r)
         let s = (resp as! HTTPURLResponse).statusCode
-        if s >= 300 { throw RPCError(code: connectFromStatus(s), message: "http \(s)") }
-        // Linux URLSession lacks bytes(for:); use the full body (Go server sends
-        // a complete frame stream in one response). De-frame it here.
+        if s >= 300 { throw rpcError(status: s, headers: (resp as! HTTPURLResponse).allHeaderFields, body: full) }
         return BufferedStream(data: full)
+    }
+
+    /// Reconstruct the exact RPCError from connect-code/connect-error.
+    private func rpcError(status: Int, headers: [AnyHashable: Any], body: Data) -> RPCError {
+        if let c = headers["connect-code"] as? String, let code = Int(c) {
+            return RPCError(code: code, message: headers["connect-error"] as? String ?? "")
+        }
+        return RPCError(code: connectFromStatus(status), message: String(data: body, encoding: .utf8) ?? "")
     }
 }
 
