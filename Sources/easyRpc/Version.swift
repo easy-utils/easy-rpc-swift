@@ -1,2 +1,2 @@
 /// easy-rpc Swift core version.
-public let easyRpcVersion = "0.3.0"
+public let easyRpcVersion = "0.4.0"
