@@ -52,6 +52,14 @@ public func codeFromString(_ name: String) -> Int {
     return 2
 }
 
+/// gzip hooks. Core has no platform dependency: runtimes that support gzip
+/// install these (e.g. the URLSession/AsyncHTTP bridges on platforms with zlib).
+public var gzipCompressHook: (@Sendable (Data) -> Data)? = nil
+public var gzipDecompressHook: (@Sendable (Data) -> Data)? = nil
+
+public func gzipCompress(_ data: Data) -> Data { gzipCompressHook?(data) ?? data }
+public func gzipDecompress(_ data: Data) -> Data { gzipDecompressHook?(data) ?? data }
+
 /// Encode a Connect unary error body {code,message}.
 public func encodeErrorJson(_ code: Int, _ message: String) -> Data {
     let esc = message.replacingOccurrences(of: "\\", with: "\\\\")
@@ -112,8 +120,9 @@ public struct FrameReader {
             }
             let length = Int(UInt32(bigEndian: lenVal))
             if acc.count < 5 + length { break }
-            let payload = acc.subdata(in: acc.startIndex+5..<acc.startIndex+5+length)
+            var payload = acc.subdata(in: acc.startIndex+5..<acc.startIndex+5+length)
             acc.removeFirst(5 + length)
+            if (flags & 0x01) != 0 { payload = gzipDecompress(payload) }
             out.append(Frameish(payload: payload, end: (flags & kEndStream) != 0))
         }
         return out
@@ -122,6 +131,9 @@ public struct FrameReader {
 
 public let kHeaderTimeout = "connect-timeout-ms"
 public let kHeaderProtocolVersion = "connect-protocol-version"
+public let kHeaderAcceptEncoding = "connect-accept-encoding"
+public let kEncodingGzip = "gzip"
+public let kCompressMinBytes = 1024
 public let kConnectProtocolVersion = "1"
 public let kDefaultMaxMessageBytes = 4 * 1024 * 1024
 
