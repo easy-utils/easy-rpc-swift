@@ -104,6 +104,22 @@ public struct FrameReader {
     }
 }
 
+public let kHeaderTimeout = "connect-timeout-ms"
+
+/// Parse the Connect timeout header into milliseconds (0 = none).
+public func parseTimeout(_ value: String?) -> Int {
+    guard let v = value, let n = Int(v), n > 0 else { return 0 }
+    return n
+}
+
+/// Attach a deadline to a request.
+public func withTimeout(_ req: Request, _ timeoutMs: Int) -> Request {
+    if timeoutMs <= 0 { return req }
+    var h = req.headers
+    h[kHeaderTimeout] = [String(timeoutMs)]
+    return Request(url: req.url, method: req.method, headers: h, body: req.body)
+}
+
 /// Protocol-agnostic server-stream.
 public protocol Stream: Sendable {
     func recv() async -> Data?
