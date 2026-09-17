@@ -119,6 +119,7 @@ def main():
                     L.append(f'  public func {camel(name)}(req: {pre}_{it}) async throws -> AsyncThrowingStream<{pre}_{ot}, Error>')
                     L.append(f'  {{ AsyncThrowingStream {{ cont in Task {{ do {{ let st = try await t.openStream(Request(url: "{path}", body: try req.serializedData()))')
                     L.append(f'    while let msg = await st.recv() {{ cont.yield(try {pre}_{ot}(serializedBytes: msg)) }}')
+                    L.append(f'    if let e = st.lastError() {{ throw e }}')
                     L.append(f'    cont.finish() }} catch {{ cont.finish(throwing: error) }} }} }} }}')
                 else:
                     L.append(f'  public func {camel(name)}(req: {pre}_{it}) async throws -> {pre}_{ot} {{')

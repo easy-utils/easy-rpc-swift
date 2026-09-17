@@ -38,6 +38,38 @@ public func connectFromStatus(_ s: Int) -> Int {
 
 public let kEndStream: UInt8 = 0x02
 
+public let kCodeNames: [Int: String] = [
+    0: "ok", 1: "canceled", 2: "unknown", 3: "invalid_argument",
+    4: "deadline_exceeded", 5: "not_found", 6: "already_exists",
+    7: "permission_denied", 8: "resource_exhausted", 9: "failed_precondition",
+    10: "aborted", 11: "out_of_range", 12: "unimplemented", 13: "internal",
+    14: "unavailable", 15: "data_loss", 16: "unauthenticated",
+]
+
+public func codeToString(_ code: Int) -> String { kCodeNames[code] ?? "unknown" }
+public func codeFromString(_ name: String) -> Int {
+    for (c, n) in kCodeNames where n == name { return c }
+    return 2
+}
+
+/// Encode a Connect end-stream payload; a clean end is empty.
+public func encodeEndStream(_ code: Int, _ message: String) -> Data {
+    if code == 0 { return Data() }
+    let esc = message.replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+    let json = "{\"error\":{\"code\":\"\(codeToString(code))\",\"message\":\"\(esc)\"}}"
+    return Data(json.utf8)
+}
+
+/// Decode a Connect end-stream payload into (code, message); (0, "") clean.
+public func decodeEndStream(_ payload: Data) -> (code: Int, message: String) {
+    if payload.isEmpty { return (0, "") }
+    guard let obj = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+          let e = obj["error"] as? [String: Any] else { return (0, "") }
+    let code = (e["code"] as? String).map { codeFromString($0) } ?? 2
+    return (code, (e["message"] as? String) ?? "")
+}
+
 public func frame(_ payload: Data, end: Bool = false) -> Data {
     var out = Data([end ? kEndStream : 0])
     withUnsafeBytes(of: UInt32(payload.count).bigEndian) { out.append(contentsOf: $0) }
@@ -45,21 +77,19 @@ public func frame(_ payload: Data, end: Bool = false) -> Data {
     return out
 }
 
-/// De-frames a server-stream byte stream into payloads.
+/// One decoded frame: payload + whether it is the END frame.
+public struct Frameish { public let payload: Data; public let end: Bool }
+
+/// De-frames a server-stream byte stream into typed frames.
 public struct FrameReader {
     private var acc = Data()
     public init() {}
-    public mutating func push(_ chunk: Data) -> [Data] {
+    public mutating func push(_ chunk: Data) -> [Frameish] {
         acc.append(chunk)
-        var out: [Data] = []
+        var out: [Frameish] = []
         while true {
             if acc.count < 5 { break }
             let flags = acc[acc.startIndex]
-            let len = Int(withUnsafeBytes(of: UInt32(0)) { _ in
-                let raw = acc.subdata(in: acc.startIndex..<acc.startIndex+5)
-                return UInt32(bitPattern: 0)
-            })
-            // read 4-byte len from acc[1..5]
             var lenVal: UInt32 = 0
             withUnsafeMutableBytes(of: &lenVal) { ptr in
                 _ = acc.copyBytes(to: ptr.bindMemory(to: UInt8.self), from: acc.startIndex+1..<acc.startIndex+5)
@@ -68,8 +98,7 @@ public struct FrameReader {
             if acc.count < 5 + length { break }
             let payload = acc.subdata(in: acc.startIndex+5..<acc.startIndex+5+length)
             acc.removeFirst(5 + length)
-            out.append(payload)
-            if (flags & kEndStream) != 0 { break }
+            out.append(Frameish(payload: payload, end: (flags & kEndStream) != 0))
         }
         return out
     }
@@ -78,7 +107,13 @@ public struct FrameReader {
 /// Protocol-agnostic server-stream.
 public protocol Stream: Sendable {
     func recv() async -> Data?
+    /// Set when the stream ended with a Connect end-stream error.
+    func lastError() -> RPCError?
     func cancel()
+}
+
+public extension Stream {
+    func lastError() -> RPCError? { nil }
 }
 
 /// Core interface a bridge implements.

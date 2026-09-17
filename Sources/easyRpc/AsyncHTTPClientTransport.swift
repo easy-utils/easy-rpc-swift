@@ -81,6 +81,7 @@ public struct AsyncHTTPClientTransport: Transport, Sendable {
 private final class BufferedStream: Stream, @unchecked Sendable {
     private var acc: Data
     private var off = 0
+    private var err: RPCError?
     init(data: Data) { self.acc = data }
     func recv() async -> Data? {
         while off + 5 <= acc.count {
@@ -93,10 +94,15 @@ private final class BufferedStream: Stream, @unchecked Sendable {
             if off + 5 + l > acc.count { break }
             let payload = acc.subdata(in: acc.startIndex+off+5..<acc.startIndex+off+5+l)
             off += 5 + l
-            if (flags & kEndStream) != 0 { return nil }
+            if (flags & kEndStream) != 0 {
+                let (code, message) = decodeEndStream(payload)
+                if code != 0 { self.err = RPCError(code: code, message: message) }
+                return nil
+            }
             return payload
         }
         return nil
     }
+    func lastError() -> RPCError? { err }
     func cancel() {}
 }
