@@ -45,10 +45,10 @@ public struct AsyncHTTPClientTransport: Transport, Sendable {
     /// Reconstruct the exact RPCError from connect-code/connect-error headers.
     private func rpcError(status: Int, headers: HTTPHeaders, body: Data) -> RPCError {
         if let c = headers.first(name: "connect-code"), let code = Int(c) {
-            return RPCError(code: code, message: headers.first(name: "connect-error") ?? "")
+            return RPCError(code: code, message: headers.first(name: "connect-error") ?? "", details: decodeErrorJson(body).details)
         }
-        let (jc, jm) = decodeErrorJson(body)
-        if jc != 0 { return RPCError(code: jc, message: jm) }
+        let (jc, jm, jd) = decodeErrorJson(body)
+        if jc != 0 { return RPCError(code: jc, message: jm, details: jd) }
         return RPCError(code: connectFromStatus(status), message: String(data: body, encoding: .utf8) ?? "")
     }
 
@@ -97,8 +97,8 @@ private final class BufferedStream: Stream, @unchecked Sendable {
             let payload = acc.subdata(in: acc.startIndex+off+5..<acc.startIndex+off+5+l)
             off += 5 + l
             if (flags & kEndStream) != 0 {
-                let (code, message) = decodeEndStream(payload)
-                if code != 0 { self.err = RPCError(code: code, message: message) }
+                let (code, message, details) = decodeEndStream(payload)
+                if code != 0 { self.err = RPCError(code: code, message: message, details: details) }
                 return nil
             }
             return payload

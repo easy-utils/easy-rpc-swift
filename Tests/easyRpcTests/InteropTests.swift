@@ -22,4 +22,47 @@ final class InteropTests: XCTestCase {
         for try await m in stream { idx.append(Int(m.index)) }
         XCTAssertEqual(idx, [0,1,2])
     }
+
+    func testFailDetailsUnaryCarriesDetails() async throws {
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let c = ConformanceServiceClient(URLSessionTransport(base: base))
+        do {
+            _ = try await c.failDetails(req: Easyrpc_Conformance_V1_FailDetailsRequest.with {
+                $0.code = 8
+                $0.message = "limited"
+                $0.detailType = "type.googleapis.com/google.rpc.RetryInfo"
+                $0.detailText = "retry:5s"
+            })
+            XCTFail("expected RPCError")
+        } catch let e as RPCError {
+            XCTAssertEqual(e.code, 8)
+            XCTAssertEqual(e.message, "limited")
+            let d = try XCTUnwrap(e.details?.first)
+            XCTAssertEqual(d.type, "type.googleapis.com/google.rpc.RetryInfo")
+            XCTAssertEqual(String(data: d.value, encoding: .utf8), "retry:5s")
+        }
+    }
+
+    func testStreamFailDetailsSurfacesDetails() async throws {
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let c = ConformanceServiceClient(URLSessionTransport(base: base))
+        let stream = try await c.streamFailDetails(req: Easyrpc_Conformance_V1_StreamFailDetailsRequest.with {
+            $0.emitBefore = 2
+            $0.code = 13
+            $0.message = "boom"
+            $0.detailType = "t/stream"
+            $0.detailText = "sd"
+        })
+        var seen: [Int] = []
+        do {
+            for try await m in stream { seen.append(Int(m.index)) }
+            XCTFail("expected RPCError")
+        } catch let e as RPCError {
+            XCTAssertEqual(seen, [0, 1])
+            XCTAssertEqual(e.code, 13)
+            let d = try XCTUnwrap(e.details?.first)
+            XCTAssertEqual(d.type, "t/stream")
+            XCTAssertEqual(String(data: d.value, encoding: .utf8), "sd")
+        }
+    }
 }

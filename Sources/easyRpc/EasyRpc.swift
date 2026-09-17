@@ -5,9 +5,27 @@ import SwiftProtobuf
 
 public typealias Headers = [String: [String]]
 
+/// A structured error detail (spec §4.1, aligned with Connect Error Details /
+/// gRPC google.rpc status details). `type` is a type URL; `value` is opaque
+/// bytes (typically an encoded protobuf message).
+public struct ErrorDetail: Sendable, Equatable, CustomStringConvertible {
+    public let type: String
+    public let value: Data
+    public init(type: String, value: Data) { self.type = type; self.value = value }
+    public static func == (l: ErrorDetail, r: ErrorDetail) -> Bool {
+        l.type == r.type && l.value == r.value
+    }
+    public var description: String { "ErrorDetail(\(type), \(value.count)B)" }
+}
+
 public struct RPCError: Error, CustomStringConvertible {
     public let code: Int
     public let message: String
+    /// Optional structured details (spec §4.1); opaque to the wire layer.
+    public let details: [ErrorDetail]?
+    public init(code: Int, message: String, details: [ErrorDetail]? = nil) {
+        self.code = code; self.message = message; self.details = details
+    }
     public var description: String { "easyrpc: code=\(code) \(message)" }
 }
 
@@ -38,11 +56,18 @@ public struct Response {
 }
 
 public func httpStatus(_ code: Int) -> Int {
-    switch code { case 3: 400; case 5: 404; case 7: 403; case 8: 429; case 16: 401; case 14: 503; default: 500 }
+    switch code {
+    case 1: 499; case 3: 400; case 4: 504; case 5: 404; case 6: 409; case 7: 403;
+    case 8: 429; case 9: 400; case 10: 409; case 11: 400; case 12: 501;
+    case 14: 503; case 16: 401; default: 500
+    }
 }
 
 public func connectFromStatus(_ s: Int) -> Int {
-    switch s { case 400: 3; case 404: 5; case 403: 7; case 401: 16; case 429: 8; case 503: 14; default: 13 }
+    switch s {
+    case 400: 3; case 404: 5; case 403: 7; case 401: 16; case 429: 8; case 503: 14;
+    case 409: 10; case 504: 4; case 501: 12; case 499: 1; default: 13
+    }
 }
 
 public let kEndStream: UInt8 = 0x02
@@ -69,38 +94,61 @@ public var gzipDecompressHook: (@Sendable (Data) -> Data)? = nil
 public func gzipCompress(_ data: Data) -> Data { gzipCompressHook?(data) ?? data }
 public func gzipDecompress(_ data: Data) -> Data { gzipDecompressHook?(data) ?? data }
 
-/// Encode a Connect unary error body {code,message}.
-public func encodeErrorJson(_ code: Int, _ message: String) -> Data {
-    let esc = message.replacingOccurrences(of: "\\", with: "\\\\")
-        .replacingOccurrences(of: "\"", with: "\\\"")
-    let json = "{\"code\":\"\(codeToString(code))\",\"message\":\"\(esc)\"}"
-    return Data(json.utf8)
+func wireDetails(_ details: [ErrorDetail]?) -> [[String: String]] {
+    (details ?? []).map { ["type": $0.type, "value": $0.value.base64EncodedString()] }
 }
 
-/// Parse a Connect unary error body; (0, "") when not one.
-public func decodeErrorJson(_ body: Data) -> (code: Int, message: String) {
-    if body.isEmpty { return (0, "") }
+/// Parse a JSON details array; malformed entries are skipped, never fatal
+/// (matrix M7). Returns nil when absent/empty.
+func parseWireDetails(_ v: Any?) -> [ErrorDetail]? {
+    guard let arr = v as? [[String: Any]] ?? (v as? [Any])?.compactMap({ $0 as? [String: Any] }) else { return nil }
+    var out: [ErrorDetail] = []
+    for el in arr {
+        guard let t = el["type"] as? String, !t.isEmpty,
+              let val = el["value"] as? String, !val.isEmpty,
+              let bytes = Data(base64Encoded: val) else { continue }
+        out.append(ErrorDetail(type: t, value: bytes))
+    }
+    return out.isEmpty ? nil : out
+}
+
+/// Encode a Connect unary error body {code,message[,details]}.
+public func encodeErrorJson(_ code: Int, _ message: String, _ details: [ErrorDetail]? = nil) -> Data {
+    var obj: [String: Any] = ["code": codeToString(code), "message": message]
+    let wire = wireDetails(details)
+    if !wire.isEmpty { obj["details"] = wire }
+    guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]) else { return Data() }
+    return data
+}
+
+/// Parse a Connect unary error body; (0, "", nil) when not one.
+public func decodeErrorJson(_ body: Data) -> (code: Int, message: String, details: [ErrorDetail]?) {
+    if body.isEmpty { return (0, "", nil) }
     guard let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
-          let code = obj["code"] as? String else { return (0, "") }
-    return (codeFromString(code), (obj["message"] as? String) ?? "")
+          let code = obj["code"] as? String else { return (0, "", nil) }
+    return (codeFromString(code), (obj["message"] as? String) ?? "", parseWireDetails(obj["details"]))
 }
 
-/// Encode a Connect end-stream payload; a clean end is empty.
-public func encodeEndStream(_ code: Int, _ message: String) -> Data {
+/// Encode a Connect end-stream payload; a clean end is empty. Details
+/// (spec §4.1) are included when non-empty.
+public func encodeEndStream(_ code: Int, _ message: String, _ details: [ErrorDetail]? = nil) -> Data {
     if code == 0 { return Data() }
-    let esc = message.replacingOccurrences(of: "\\", with: "\\\\")
-        .replacingOccurrences(of: "\"", with: "\\\"")
-    let json = "{\"error\":{\"code\":\"\(codeToString(code))\",\"message\":\"\(esc)\"}}"
-    return Data(json.utf8)
+    var err: [String: Any] = ["code": codeToString(code), "message": message]
+    let wire = wireDetails(details)
+    if !wire.isEmpty { err["details"] = wire }
+    guard let data = try? JSONSerialization.data(withJSONObject: ["error": err], options: [.sortedKeys]) else { return Data() }
+    return data
 }
 
-/// Decode a Connect end-stream payload into (code, message); (0, "") clean.
-public func decodeEndStream(_ payload: Data) -> (code: Int, message: String) {
-    if payload.isEmpty { return (0, "") }
+/// Decode a Connect end-stream payload into (code, message, details);
+/// (0, "", nil) = clean end. Malformed input is a clean end (matrix M2); an
+/// error object without a code maps to 2 (M3/M4); unknown fields ignored (M5).
+public func decodeEndStream(_ payload: Data) -> (code: Int, message: String, details: [ErrorDetail]?) {
+    if payload.isEmpty { return (0, "", nil) }
     guard let obj = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
-          let e = obj["error"] as? [String: Any] else { return (0, "") }
+          let e = obj["error"] as? [String: Any] else { return (0, "", nil) }
     let code = (e["code"] as? String).map { codeFromString($0) } ?? 2
-    return (code, (e["message"] as? String) ?? "")
+    return (code, (e["message"] as? String) ?? "", parseWireDetails(e["details"]))
 }
 
 public func frame(_ payload: Data, end: Bool = false) -> Data {

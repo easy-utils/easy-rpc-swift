@@ -20,6 +20,7 @@ public final class ConformanceServiceClient {
   public func count(req: Easyrpc_Conformance_V1_CountRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_CountResponse, Error>
   { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/v1/count", body: try req.serializedData()))
     while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_CountResponse(serializedBytes: msg)) }
+    if let e = st.lastError() { throw e }
     cont.finish() } catch { cont.finish(throwing: error) } } } }
 
   public func fail(req: Easyrpc_Conformance_V1_FailRequest) async throws -> Easyrpc_Conformance_V1_FailResponse {
@@ -27,5 +28,35 @@ public final class ConformanceServiceClient {
     if let e = res.error { throw e }
     return try Easyrpc_Conformance_V1_FailResponse(serializedBytes: res.body)
   }
+
+  public func streamFail(req: Easyrpc_Conformance_V1_StreamFailRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_StreamFailResponse, Error>
+  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/v1/stream-fail", body: try req.serializedData()))
+    while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_StreamFailResponse(serializedBytes: msg)) }
+    if let e = st.lastError() { throw e }
+    cont.finish() } catch { cont.finish(throwing: error) } } } }
+
+  public func echoMeta(req: Easyrpc_Conformance_V1_EchoMetaRequest) async throws -> Easyrpc_Conformance_V1_EchoMetaResponse {
+    let res = try await t.send(Request(url: "/v1/echo-meta", body: try req.serializedData()))
+    if let e = res.error { throw e }
+    return try Easyrpc_Conformance_V1_EchoMetaResponse(serializedBytes: res.body)
+  }
+
+  public func big(req: Easyrpc_Conformance_V1_BigRequest) async throws -> Easyrpc_Conformance_V1_BigResponse {
+    let res = try await t.send(Request(url: "/v1/big", body: try req.serializedData()))
+    if let e = res.error { throw e }
+    return try Easyrpc_Conformance_V1_BigResponse(serializedBytes: res.body)
+  }
+
+  public func failDetails(req: Easyrpc_Conformance_V1_FailDetailsRequest) async throws -> Easyrpc_Conformance_V1_FailDetailsResponse {
+    let res = try await t.send(Request(url: "/v1/fail-details", body: try req.serializedData()))
+    if let e = res.error { throw e }
+    return try Easyrpc_Conformance_V1_FailDetailsResponse(serializedBytes: res.body)
+  }
+
+  public func streamFailDetails(req: Easyrpc_Conformance_V1_StreamFailDetailsRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_StreamFailDetailsResponse, Error>
+  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/v1/stream-fail-details", body: try req.serializedData()))
+    while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_StreamFailDetailsResponse(serializedBytes: msg)) }
+    if let e = st.lastError() { throw e }
+    cont.finish() } catch { cont.finish(throwing: error) } } } }
 
 }
