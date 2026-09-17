@@ -52,6 +52,22 @@ public func codeFromString(_ name: String) -> Int {
     return 2
 }
 
+/// Encode a Connect unary error body {code,message}.
+public func encodeErrorJson(_ code: Int, _ message: String) -> Data {
+    let esc = message.replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+    let json = "{\"code\":\"\(codeToString(code))\",\"message\":\"\(esc)\"}"
+    return Data(json.utf8)
+}
+
+/// Parse a Connect unary error body; (0, "") when not one.
+public func decodeErrorJson(_ body: Data) -> (code: Int, message: String) {
+    if body.isEmpty { return (0, "") }
+    guard let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+          let code = obj["code"] as? String else { return (0, "") }
+    return (codeFromString(code), (obj["message"] as? String) ?? "")
+}
+
 /// Encode a Connect end-stream payload; a clean end is empty.
 public func encodeEndStream(_ code: Int, _ message: String) -> Data {
     if code == 0 { return Data() }

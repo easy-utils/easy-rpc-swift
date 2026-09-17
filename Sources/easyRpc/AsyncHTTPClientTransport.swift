@@ -47,6 +47,8 @@ public struct AsyncHTTPClientTransport: Transport, Sendable {
         if let c = headers.first(name: "connect-code"), let code = Int(c) {
             return RPCError(code: code, message: headers.first(name: "connect-error") ?? "")
         }
+        let (jc, jm) = decodeErrorJson(body)
+        if jc != 0 { return RPCError(code: jc, message: jm) }
         return RPCError(code: connectFromStatus(status), message: String(data: body, encoding: .utf8) ?? "")
     }
 

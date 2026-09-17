@@ -47,6 +47,8 @@ public final class URLSessionTransport: Transport, @unchecked Sendable {
         if let c = headers["connect-code"] as? String, let code = Int(c) {
             return RPCError(code: code, message: headers["connect-error"] as? String ?? "")
         }
+        let (jc, jm) = decodeErrorJson(body)
+        if jc != 0 { return RPCError(code: jc, message: jm) }
         return RPCError(code: connectFromStatus(status), message: String(data: body, encoding: .utf8) ?? "")
     }
 }
