@@ -132,6 +132,71 @@ public extension Stream {
     func lastError() -> RPCError? { nil }
 }
 
+/// A call interceptor: mutate the request (auth/metadata), impose a deadline,
+/// observe, or short-circuit. `next` performs the call.
+public protocol Interceptor: Sendable {
+    func unary(_ req: Request, _ next: @Sendable (Request) async throws -> Response) async throws -> Response
+    func stream(_ req: Request, _ next: @Sendable (Request) async throws -> any Stream) async throws -> any Stream
+}
+
+public extension Interceptor {
+    func unary(_ req: Request, _ next: @Sendable (Request) async throws -> Response) async throws -> Response {
+        try await next(req)
+    }
+    func stream(_ req: Request, _ next: @Sendable (Request) async throws -> any Stream) async throws -> any Stream {
+        try await next(req)
+    }
+}
+
+/// Apply interceptors (first = outermost) around a Transport.
+public struct InterceptorTransport: Transport {
+    private let ics: [any Interceptor]
+    private let inner: any Transport
+    public init(_ ics: [any Interceptor], _ inner: any Transport) { self.ics = ics; self.inner = inner }
+
+    private func dispatchUnary(_ i: Int, _ r: Request) async throws -> Response {
+        if i >= ics.count { return try await inner.send(r) }
+        let ic = ics[i]
+        return try await ic.unary(r) { nr in try await dispatchUnary(i + 1, nr) }
+    }
+    private func dispatchStream(_ i: Int, _ r: Request) async throws -> any Stream {
+        if i >= ics.count { return try await inner.openStream(r) }
+        let ic = ics[i]
+        return try await ic.stream(r) { nr in try await dispatchStream(i + 1, nr) }
+    }
+    public func send(_ req: Request) async throws -> Response { try await dispatchUnary(0, req) }
+    public func openStream(_ req: Request) async throws -> any Stream { try await dispatchStream(0, req) }
+}
+
+/// Attach fixed metadata to every call.
+public struct MetadataInterceptor: Interceptor {
+    public let md: Headers
+    public init(_ md: Headers) { self.md = md }
+    private func aug(_ req: Request) -> Request {
+        var h = req.headers
+        for (k, v) in md where h[k] == nil { h[k] = v }
+        return Request(url: req.url, method: req.method, headers: h, body: req.body)
+    }
+    public func unary(_ req: Request, _ next: @Sendable (Request) async throws -> Response) async throws -> Response {
+        try await next(aug(req))
+    }
+    public func stream(_ req: Request, _ next: @Sendable (Request) async throws -> any Stream) async throws -> any Stream {
+        try await next(aug(req))
+    }
+}
+
+/// Attach a Connect deadline to every call.
+public struct TimeoutInterceptor: Interceptor {
+    public let ms: Int
+    public init(_ ms: Int) { self.ms = ms }
+    public func unary(_ req: Request, _ next: @Sendable (Request) async throws -> Response) async throws -> Response {
+        try await next(withTimeout(req, ms))
+    }
+    public func stream(_ req: Request, _ next: @Sendable (Request) async throws -> any Stream) async throws -> any Stream {
+        try await next(withTimeout(req, ms))
+    }
+}
+
 /// Core interface a bridge implements.
 public protocol Transport: Sendable {
     func send(_ req: Request) async throws -> Response
