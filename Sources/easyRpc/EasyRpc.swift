@@ -160,6 +160,34 @@ public func withTimeout(_ req: Request, _ timeoutMs: Int) -> Request {
     return Request(url: req.url, method: req.method, headers: h, body: req.body)
 }
 
+/// Adapter mode for the Swift composition root.
+public enum TransportMode: Sendable { case auto, urlSession, asyncHTTPClient }
+
+/// Composition root: pick an adapter by `mode`, install the built-in
+/// metadata/deadline interceptors, then any `extra`. Swapping `mode` leaves the
+/// interceptors unchanged.
+public func connect(
+    baseUrl: String,
+    token: String = "",
+    mode: TransportMode = .auto,
+    timeoutMs: Int = 0,
+    extra: [any Interceptor] = [],
+    transport: (any Transport)? = nil
+) -> any Transport {
+    let base = baseUrl.hasSuffix("/") ? String(baseUrl.dropLast()) : baseUrl
+    let inner: any Transport = transport ?? {
+        switch mode {
+        case .asyncHTTPClient: return AsyncHTTPClientTransport(base: base)
+        case .urlSession, .auto: return URLSessionTransport(base: base)
+        }
+    }()
+    var ics: [any Interceptor] = []
+    if !token.isEmpty { ics.append(MetadataInterceptor(["authorization": ["Bearer \(token)"]])) }
+    if timeoutMs > 0 { ics.append(TimeoutInterceptor(timeoutMs)) }
+    ics.append(contentsOf: extra)
+    return ics.isEmpty ? inner : InterceptorTransport(ics, inner)
+}
+
 /// Protocol-agnostic server-stream.
 public protocol Stream: Sendable {
     func recv() async -> Data?
