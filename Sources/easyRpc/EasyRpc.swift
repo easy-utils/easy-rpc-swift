@@ -121,6 +121,9 @@ public struct FrameReader {
 }
 
 public let kHeaderTimeout = "connect-timeout-ms"
+public let kHeaderProtocolVersion = "connect-protocol-version"
+public let kConnectProtocolVersion = "1"
+public let kDefaultMaxMessageBytes = 4 * 1024 * 1024
 
 /// Parse the Connect timeout header into milliseconds (0 = none).
 public func parseTimeout(_ value: String?) -> Int {
