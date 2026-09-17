@@ -79,29 +79,36 @@ final class InteropTests: XCTestCase {
         let ahc = AsyncHTTPClientTransport(base: base)
         let t = InterceptorTransport([], ahc)
         let c = ConformanceServiceClient(t)
-        let out = try await c.echo(req: Easyrpc_Conformance_V1_EchoRequest.with { $0.input = "hi" })
-        XCTAssertEqual(out.output, "echo:hi")
-
-        let stream = try await c.count(req: Easyrpc_Conformance_V1_CountRequest.with { $0.count = 3 })
-        var idx: [Int] = []
-        for try await m in stream { idx.append(Int(m.index)) }
-        XCTAssertEqual(idx, [0, 1, 2])
-
+        // AHC's deinit PRECONDITION-crashes the process if the client was not
+        // shut down — guarantee shutdown on every path, including thrown
+        // errors (a missed shutdown here kills the whole xctest run).
         do {
-            _ = try await c.failDetails(req: Easyrpc_Conformance_V1_FailDetailsRequest.with {
-                $0.code = 8
-                $0.message = "limited"
-                $0.detailType = "type.googleapis.com/google.rpc.RetryInfo"
-                $0.detailText = "retry:5s"
-            })
-            XCTFail("expected RPCError")
-        } catch let e as RPCError {
-            XCTAssertEqual(e.code, 8)
-            let d = try XCTUnwrap(e.details?.first)
-            XCTAssertEqual(d.type, "type.googleapis.com/google.rpc.RetryInfo")
-            XCTAssertEqual(String(data: d.value, encoding: .utf8), "retry:5s")
+            let out = try await c.echo(req: Easyrpc_Conformance_V1_EchoRequest.with { $0.input = "hi" })
+            XCTAssertEqual(out.output, "echo:hi")
+
+            let stream = try await c.count(req: Easyrpc_Conformance_V1_CountRequest.with { $0.count = 3 })
+            var idx: [Int] = []
+            for try await m in stream { idx.append(Int(m.index)) }
+            XCTAssertEqual(idx, [0, 1, 2])
+
+            do {
+                _ = try await c.failDetails(req: Easyrpc_Conformance_V1_FailDetailsRequest.with {
+                    $0.code = 8
+                    $0.message = "limited"
+                    $0.detailType = "type.googleapis.com/google.rpc.RetryInfo"
+                    $0.detailText = "retry:5s"
+                })
+                XCTFail("expected RPCError")
+            } catch let e as RPCError {
+                XCTAssertEqual(e.code, 8)
+                let d = try XCTUnwrap(e.details?.first)
+                XCTAssertEqual(d.type, "type.googleapis.com/google.rpc.RetryInfo")
+                XCTAssertEqual(String(data: d.value, encoding: .utf8), "retry:5s")
+            }
+        } catch {
+            try? await ahc.shutdown()
+            throw error
         }
-        // AHC requires explicit shutdown before deinit (precondition).
         try await ahc.shutdown()
     }
 }
