@@ -88,11 +88,71 @@ public func codeFromString(_ name: String) -> Int {
 
 /// gzip hooks. Core has no platform dependency: runtimes that support gzip
 /// install these (e.g. the URLSession/AsyncHTTP bridges on platforms with zlib).
+/// The decompress hook returns nil on CORRUPT input (fault matrix M10): the
+/// frame scanner turns that into RPCError(13), never raw compressed bytes.
 public var gzipCompressHook: (@Sendable (Data) -> Data)? = nil
-public var gzipDecompressHook: (@Sendable (Data) -> Data)? = nil
+public var gzipDecompressHook: (@Sendable (Data) -> Data?)? = nil
 
 public func gzipCompress(_ data: Data) -> Data { gzipCompressHook?(data) ?? data }
-public func gzipDecompress(_ data: Data) -> Data { gzipDecompressHook?(data) ?? data }
+public func gzipDecompress(_ data: Data) -> Data? { gzipDecompressHook?(data) ?? nil }
+
+/// Incremental frame scanner (fault matrix F1/F2/F5/M8/M10): feed it raw
+/// stream bytes, pull complete frames out, and call `finish()` at source end —
+/// it errors on trailing partial bytes or a missing END frame.
+public final class FrameScanner {
+    private var acc = Data()
+    private var sawEnd = false
+    private(set) public var error: RPCError?
+
+    public init() {}
+
+    /// Feed raw bytes; returns the complete DATA payloads found (the END frame
+    /// terminates the stream and is not returned).
+    public func push(_ chunk: Data) -> [Data] {
+        guard error == nil else { return [] }
+        acc.append(chunk)
+        var out: [Data] = []
+        while error == nil {
+            guard acc.count >= 5 else { break }
+            let flags = acc[acc.startIndex]
+            var lenbe: UInt32 = 0
+            withUnsafeMutableBytes(of: &lenbe) { p in
+                _ = acc.copyBytes(to: p.bindMemory(to: UInt8.self), from: acc.startIndex+1..<acc.startIndex+5)
+            }
+            let len = Int(UInt32(bigEndian: lenbe))
+            if acc.count < 5 + len { break }
+            var payload = acc.subdata(in: acc.startIndex+5..<acc.startIndex+5+len)
+            acc.removeFirst(5 + len)
+            if flags & 0x01 != 0 {
+                guard let plain = gzipDecompress(payload) else {
+                    error = RPCError(code: 13, message: "corrupt gzip frame")
+                    return out
+                }
+                payload = plain
+            }
+            if flags & kEndStream != 0 {
+                sawEnd = true
+                let (code, message, details) = decodeEndStream(payload)
+                if code != 0 { error = RPCError(code: code, message: message, details: details) }
+                return out
+            }
+            out.append(payload)
+        }
+        return out
+    }
+
+    /// Source ended. The Connect protocol requires every server-stream to
+    /// terminate with an END frame; trailing partial bytes or a missing END
+    /// frame mean the stream was truncated mid-flight (F2/M8).
+    public func finish() {
+        guard error == nil else { return }
+        if !acc.isEmpty {
+            error = RPCError(code: 13, message: "truncated frame at end of stream")
+        } else if !sawEnd {
+            error = RPCError(code: 13, message: "stream ended without END frame")
+        }
+    }
+}
 
 func wireDetails(_ details: [ErrorDetail]?) -> [[String: String]] {
     (details ?? []).map { ["type": $0.type, "value": $0.value.base64EncodedString()] }
@@ -164,6 +224,7 @@ public struct Frameish { public let payload: Data; public let end: Bool }
 /// De-frames a server-stream byte stream into typed frames.
 public struct FrameReader {
     private var acc = Data()
+    private var sawEnd = false
     public init() {}
     public mutating func push(_ chunk: Data) -> [Frameish] {
         acc.append(chunk)
@@ -179,10 +240,30 @@ public struct FrameReader {
             if acc.count < 5 + length { break }
             var payload = acc.subdata(in: acc.startIndex+5..<acc.startIndex+5+length)
             acc.removeFirst(5 + length)
-            if (flags & 0x01) != 0 { payload = gzipDecompress(payload) }
-            out.append(Frameish(payload: payload, end: (flags & kEndStream) != 0))
+            if (flags & 0x01) != 0 {
+                // M10: corrupt gzip is a protocol error, never raw bytes.
+                guard let plain = gzipDecompress(payload) else {
+                    out.append(Frameish(payload: Data(), end: true))
+                    return out
+                }
+                payload = plain
+            }
+            let end = (flags & kEndStream) != 0
+            if end { sawEnd = true }
+            out.append(Frameish(payload: payload, end: end))
         }
         return out
+    }
+
+    /// Source ended (fault matrix F2/M8): trailing partial bytes or a missing
+    /// END frame mean the stream was truncated mid-flight.
+    public mutating func finish() throws {
+        if !acc.isEmpty {
+            throw RPCError(code: 13, message: "truncated frame at end of stream")
+        }
+        if !sawEnd {
+            throw RPCError(code: 13, message: "stream ended without END frame")
+        }
     }
 }
 

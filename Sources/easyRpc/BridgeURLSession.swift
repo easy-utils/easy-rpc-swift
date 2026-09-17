@@ -55,31 +55,18 @@ public final class URLSessionTransport: Transport, @unchecked Sendable {
 
 /// Streams from an in-memory byte buffer by de-framing.
 private final class BufferedStream: Stream, @unchecked Sendable {
-    private var acc: Data
-    private var off = 0
-    private var err: RPCError?
-    init(data: Data) { self.acc = data }
+    private let scanner = FrameScanner()
+    private var payloads: [Data] = []
+    private var finished = false
+    init(data: Data) {
+        payloads = scanner.push(data)
+        scanner.finish()
+        finished = true
+    }
     func recv() async -> Data? {
-        // de-frame one message at a time
-        while off + 5 <= acc.count {
-            let flags = acc[acc.startIndex + off]
-            var len: UInt32 = 0
-            withUnsafeMutableBytes(of: &len) { p in
-                _ = acc.copyBytes(to: p.bindMemory(to: UInt8.self), from: acc.startIndex+off+1..<acc.startIndex+off+5)
-            }
-            let l = Int(UInt32(bigEndian: len))
-            if off + 5 + l > acc.count { break }
-            let payload = acc.subdata(in: acc.startIndex+off+5..<acc.startIndex+off+5+l)
-            off += 5 + l
-            if (flags & kEndStream) != 0 {
-                let (code, message, details) = decodeEndStream(payload)
-                if code != 0 { self.err = RPCError(code: code, message: message, details: details) }
-                return nil
-            }
-            return payload
-        }
+        if !payloads.isEmpty { return payloads.removeFirst() }
         return nil
     }
-    func lastError() -> RPCError? { err }
+    func lastError() -> RPCError? { scanner.error }
     func cancel() {}
 }
