@@ -70,6 +70,11 @@ final class InteropTests: XCTestCase {
     // The locally-testable variant of the Swift bridge family (URLSession is
     // exercised by the tests above; AHC is the Linux/server adapter).
     func testAHCClientAgainstConformanceServer() async throws {
+        // AHC's event-loop init crashes in sandboxed macOS containers (the
+        // URLSession tests cover the Darwin network stack there); Linux CI
+        // covers AHC itself.
+        try XCTSkipIf(ProcessInfo.processInfo.environment["EASYRPC_SKIP_AHC"] == "1",
+                      "EASYRPC_SKIP_AHC=1 (macOS container)")
         let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
         let ahc = AsyncHTTPClientTransport(base: base)
         let t = InterceptorTransport([], ahc)
