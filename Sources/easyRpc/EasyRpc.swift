@@ -16,8 +16,17 @@ public struct Request {
     public var method: String
     public var headers: Headers
     public var body: Data?
-    public init(url: String, method: String = "POST", headers: Headers = [:], body: Data? = nil) {
+    /// Local cancellation handle. Adapters race this against the call.
+    public var cancelled: @Sendable () -> Bool
+    public init(
+        url: String,
+        method: String = "POST",
+        headers: Headers = [:],
+        body: Data? = nil,
+        cancelled: @escaping @Sendable () -> Bool = { false }
+    ) {
         self.url = url; self.method = method; self.headers = headers; self.body = body
+        self.cancelled = cancelled
     }
 }
 
@@ -216,15 +225,39 @@ public struct MetadataInterceptor: Interceptor {
     }
 }
 
-/// Attach a Connect deadline to every call.
-public struct TimeoutInterceptor: Interceptor {
-    public let ms: Int
+/// Attach a Connect deadline to every call; enforces locally by racing a
+/// task against the deadline, so it works over any adapter.
+public final class TimeoutInterceptor: Interceptor, @unchecked Sendable {
+    private let ms: Int
+    private let lock = NSLock()
+    private var fired = false
     public init(_ ms: Int) { self.ms = ms }
-    public func unary(_ req: Request, _ next: @Sendable (Request) async throws -> Response) async throws -> Response {
-        try await next(withTimeout(req, ms))
+
+    private func run<T>(_ req: Request, _ next: @escaping @Sendable (Request) async throws -> T) async throws -> T {
+        if ms <= 0 { return try await next(req) }
+        var r = withTimeout(req, ms)
+        r.cancelled = { [weak self] in
+            guard let self else { return false }
+            self.lock.lock(); defer { self.lock.unlock() }
+            return self.fired
+        }
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await next(r) }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(self.ms) * 1_000_000)
+                self.lock.lock(); self.fired = true; self.lock.unlock()
+                throw RPCError(code: 4, message: "deadline exceeded")
+            }
+            defer { group.cancelAll(); self.lock.lock(); self.fired = false; self.lock.unlock() }
+            return try await group.next()!
+        }
     }
-    public func stream(_ req: Request, _ next: @Sendable (Request) async throws -> any Stream) async throws -> any Stream {
-        try await next(withTimeout(req, ms))
+
+    public func unary(_ req: Request, _ next: @escaping @Sendable (Request) async throws -> Response) async throws -> Response {
+        try await run(req, next)
+    }
+    public func stream(_ req: Request, _ next: @escaping @Sendable (Request) async throws -> any Stream) async throws -> any Stream {
+        try await run(req, next)
     }
 }
 
