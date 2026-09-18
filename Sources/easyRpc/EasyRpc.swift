@@ -157,7 +157,16 @@ public final class FrameScanner {
 }
 
 func wireDetails(_ details: [ErrorDetail]?) -> [[String: String]] {
-    (details ?? []).map { ["type": $0.type, "value": $0.value.base64EncodedString()] }
+    // UNPADDED standard base64 — matches Connect (base64.RawStdEncoding).
+    (details ?? []).map { ["type": $0.type, "value": $0.value.base64EncodedString().trimmingCharacters(in: CharacterSet(charactersIn: "="))] }
+}
+
+/// Decode standard OR URL-safe base64, padded OR unpadded.
+func b64DecodeLenient(_ s: String) -> Data? {
+    var t = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+    if t.count % 4 == 1 { return nil }
+    while t.count % 4 != 0 { t += "=" }
+    return Data(base64Encoded: t)
 }
 
 /// Parse a JSON details array; malformed entries are skipped, never fatal
@@ -168,7 +177,7 @@ func parseWireDetails(_ v: Any?) -> [ErrorDetail]? {
     for el in arr {
         guard let t = el["type"] as? String, !t.isEmpty,
               let val = el["value"] as? String, !val.isEmpty,
-              let bytes = Data(base64Encoded: val) else { continue }
+              let bytes = b64DecodeLenient(val) else { continue }
         out.append(ErrorDetail(type: t, value: bytes))
     }
     return out.isEmpty ? nil : out
