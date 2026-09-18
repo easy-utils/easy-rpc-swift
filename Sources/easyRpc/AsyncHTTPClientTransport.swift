@@ -39,9 +39,14 @@ public struct AsyncHTTPClientTransport: Transport, Sendable {
         var collected = try await resp.body.collect(upTo: 4 * 1024 * 1024);
         let bytes = collected.readBytes(length: collected.readableBytes) ?? []
         let s = Int(resp.status.code)
-        let hdrs = Dictionary(uniqueKeysWithValues: resp.headers.map { ($0.name.lowercased(), [$0.value]) })
-        return Response(status: s, headers: hdrs, body: Data(bytes),
-                        error: s >= 300 ? rpcError(status: s, headers: resp.headers, body: Data(bytes)) : nil)
+        let all = Dictionary(grouping: resp.headers, by: { $0.name.lowercased() }).mapValues { $0.map { $0.value } }
+        var body = Data(bytes)
+        if let ce = all["content-encoding"]?.first, ce == "gzip", !body.isEmpty, let plain = gzipDecompress(body) {
+            body = plain
+        }
+        let (hdrs, trailers) = demuxTrailers(all)
+        return Response(status: s, headers: hdrs, body: body, trailers: trailers,
+                        error: s >= 300 ? rpcError(status: s, headers: resp.headers, body: body) : nil)
     }
 
     /// Reconstruct the exact RPCError from connect-code/connect-error headers.
@@ -88,6 +93,7 @@ private final class BufferedStream: Stream, @unchecked Sendable {
     private var acc: Data
     private var off = 0
     private var err: RPCError?
+    private var trailersMap: Headers = [:]
     init(data: Data) { self.acc = data }
     func recv() async -> Data? {
         while off + 5 <= acc.count {
@@ -101,8 +107,9 @@ private final class BufferedStream: Stream, @unchecked Sendable {
             let payload = acc.subdata(in: acc.startIndex+off+5..<acc.startIndex+off+5+l)
             off += 5 + l
             if (flags & kEndStream) != 0 {
-                let (code, message, details) = decodeEndStream(payload)
-                if code != 0 { self.err = RPCError(code: code, message: message, details: details) }
+                let es = decodeEndStream(payload)
+                if !es.metadata.isEmpty { self.trailersMap = es.metadata }
+                if es.code != 0 { self.err = RPCError(code: es.code, message: es.message, details: es.details) }
                 return nil
             }
             return payload
@@ -111,4 +118,8 @@ private final class BufferedStream: Stream, @unchecked Sendable {
     }
     func lastError() -> RPCError? { err }
     func cancel() {}
+}
+
+extension BufferedStream {
+    func trailers() -> Headers { trailersMap }
 }

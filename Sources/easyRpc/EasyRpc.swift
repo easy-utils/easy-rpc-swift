@@ -31,19 +31,17 @@ public struct RPCError: Error, CustomStringConvertible {
 
 public struct Request {
     public var url: String
-    public var method: String
     public var headers: Headers
     public var body: Data?
     /// Local cancellation handle. Adapters race this against the call.
     public var cancelled: @Sendable () -> Bool
     public init(
         url: String,
-        method: String = "POST",
         headers: Headers = [:],
         body: Data? = nil,
         cancelled: @escaping @Sendable () -> Bool = { false }
     ) {
-        self.url = url; self.method = method; self.headers = headers; self.body = body
+        self.url = url; self.headers = headers; self.body = body
         self.cancelled = cancelled
     }
 }
@@ -52,6 +50,8 @@ public struct Response {
     public var status: Int
     public var headers: Headers
     public var body: Data
+    /// Unary trailing metadata (demuxed from `trailer-*` response headers).
+    public var trailers: Headers
     public var error: RPCError?
 }
 
@@ -103,6 +103,7 @@ public final class FrameScanner {
     private var acc = Data()
     private var sawEnd = false
     private(set) public var error: RPCError?
+    private(set) public var trailers: Headers = [:]
 
     public init() {}
 
@@ -132,8 +133,9 @@ public final class FrameScanner {
             }
             if flags & kEndStream != 0 {
                 sawEnd = true
-                let (code, message, details) = decodeEndStream(payload)
-                if code != 0 { error = RPCError(code: code, message: message, details: details) }
+                let es = decodeEndStream(payload)
+                if !es.metadata.isEmpty { trailers = es.metadata }
+                if es.code != 0 { error = RPCError(code: es.code, message: es.message, details: es.details) }
                 return out
             }
             out.append(payload)
@@ -191,24 +193,82 @@ public func decodeErrorJson(_ body: Data) -> (code: Int, message: String, detail
 
 /// Encode a Connect end-stream payload; a clean end is empty. Details
 /// (spec §4.1) are included when non-empty.
-public func encodeEndStream(_ code: Int, _ message: String, _ details: [ErrorDetail]? = nil) -> Data {
-    if code == 0 { return Data() }
-    var err: [String: Any] = ["code": codeToString(code), "message": message]
-    let wire = wireDetails(details)
-    if !wire.isEmpty { err["details"] = wire }
-    guard let data = try? JSONSerialization.data(withJSONObject: ["error": err], options: [.sortedKeys]) else { return Data() }
+public func encodeEndStream(_ code: Int, _ message: String, _ details: [ErrorDetail]? = nil,
+                           _ metadata: Headers = [:]) -> Data {
+    var obj: [String: Any] = [:]
+    if code != 0 {
+        var err: [String: Any] = ["code": codeToString(code), "message": message]
+        let wire = wireDetails(details)
+        if !wire.isEmpty { err["details"] = wire }
+        obj["error"] = err
+    }
+    let md = metadata.filter { !$0.value.isEmpty }
+    if !md.isEmpty { obj["metadata"] = md }
+    guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]) else { return Data() }
     return data
 }
+
+/// A decoded END frame: code/message/details + trailing metadata.
+public struct EndStream {
+    public let code: Int
+    public let message: String
+    public let details: [ErrorDetail]?
+    public let metadata: Headers
+    public init(code: Int, message: String, details: [ErrorDetail]?, metadata: Headers) {
+        self.code = code; self.message = message; self.details = details; self.metadata = metadata
+    }
+}
+
+/// Split headers into (headers, trailers) by the `trailer-` prefix.
+public func demuxTrailers(_ all: Headers) -> (headers: Headers, trailers: Headers) {
+    var h: Headers = [:]; var t: Headers = [:]
+    for (k, v) in all {
+        if k.lowercased().hasPrefix("trailer-") {
+            t[String(k.lowercased().dropFirst(8))] = v
+        } else { h[k] = v }
+    }
+    return (h, t)
+}
+
+/// Merge trailers into headers using the `trailer-` prefix.
+public func muxTrailers(_ headers: Headers, _ trailers: Headers) -> Headers {
+    var out = headers
+    for (k, v) in trailers { out["trailer-\(k.lowercased())"] = v }
+    return out
+}
+
+/// Per-RPC context for generated handlers: request metadata + trailer channel.
+public final class HandlerContext: @unchecked Sendable {
+    public let headers: Headers
+    private var _trailers: Headers = [:]
+    public init(headers: Headers = [:]) { self.headers = headers }
+    public func setTrailer(_ key: String, _ value: String) {
+        _trailers[key, default: []].append(value)
+    }
+    public var trailers: Headers { _trailers }
+}
+
+public let contentTypeUnary = "application/proto"
+public let contentTypeStream = "application/connect+proto"
 
 /// Decode a Connect end-stream payload into (code, message, details);
 /// (0, "", nil) = clean end. Malformed input is a clean end (matrix M2); an
 /// error object without a code maps to 2 (M3/M4); unknown fields ignored (M5).
-public func decodeEndStream(_ payload: Data) -> (code: Int, message: String, details: [ErrorDetail]?) {
-    if payload.isEmpty { return (0, "", nil) }
-    guard let obj = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
-          let e = obj["error"] as? [String: Any] else { return (0, "", nil) }
+public func decodeEndStream(_ payload: Data) -> EndStream {
+    if payload.isEmpty { return EndStream(code: 0, message: "", details: nil, metadata: [:]) }
+    guard let obj = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else {
+        return EndStream(code: 0, message: "", details: nil, metadata: [:])
+    }
+    var metadata: Headers = [:]
+    if let md = obj["metadata"] as? [String: [String]] {
+        metadata = md.filter { !$0.value.isEmpty }
+    }
+    guard let e = obj["error"] as? [String: Any] else {
+        return EndStream(code: 0, message: "", details: nil, metadata: metadata)
+    }
     let code = (e["code"] as? String).map { codeFromString($0) } ?? 2
-    return (code, (e["message"] as? String) ?? "", parseWireDetails(e["details"]))
+    return EndStream(code: code, message: (e["message"] as? String) ?? "",
+                     details: parseWireDetails(e["details"]), metadata: metadata)
 }
 
 public func frame(_ payload: Data, end: Bool = false) -> Data {
@@ -286,7 +346,7 @@ public func withTimeout(_ req: Request, _ timeoutMs: Int) -> Request {
     if timeoutMs <= 0 { return req }
     var h = req.headers
     h[kHeaderTimeout] = [String(timeoutMs)]
-    return Request(url: req.url, method: req.method, headers: h, body: req.body)
+    return Request(url: req.url, headers: h, body: req.body)
 }
 
 /// Adapter mode for the Swift composition root.
@@ -322,11 +382,14 @@ public protocol Stream: Sendable {
     func recv() async -> Data?
     /// Set when the stream ended with a Connect end-stream error.
     func lastError() -> RPCError?
+    /// Trailing metadata from the END frame (available after the stream ends).
+    func trailers() -> Headers
     func cancel()
 }
 
 public extension Stream {
     func lastError() -> RPCError? { nil }
+    func trailers() -> Headers { [:] }
 }
 
 /// A call interceptor: mutate the request (auth/metadata), impose a deadline,
@@ -372,7 +435,7 @@ public struct MetadataInterceptor: Interceptor {
     private func aug(_ req: Request) -> Request {
         var h = req.headers
         for (k, v) in md where h[k] == nil { h[k] = v }
-        return Request(url: req.url, method: req.method, headers: h, body: req.body)
+        return Request(url: req.url, headers: h, body: req.body)
     }
     public func unary(_ req: Request, _ next: @Sendable (Request) async throws -> Response) async throws -> Response {
         try await next(aug(req))

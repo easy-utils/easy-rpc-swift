@@ -13,6 +13,25 @@ final class InteropTests: XCTestCase {
         let out = try await c.echo(req: Easyrpc_Conformance_V1_EchoRequest.with { $0.input = "hi" })
         XCTAssertEqual(out.output, "echo:hi")
     }
+
+    func testUnaryTrailerSurfaces() async throws {
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let c = ConformanceServiceClient(URLSessionTransport(base: base))
+        let out = try await c.echoTrailer(req: Easyrpc_Conformance_V1_EchoTrailerRequest.with { $0.input = "x" })
+        XCTAssertEqual(out.output, "trailer:x")
+        XCTAssertEqual(c.lastTrailers["x-trl"], ["unary-x"])
+    }
+
+    func testUnaryErrorSurfaces() async throws {
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let c = ConformanceServiceClient(URLSessionTransport(base: base))
+        do {
+            _ = try await c.fail(req: Easyrpc_Conformance_V1_FailRequest.with { $0.message = "nope" })
+            XCTFail("expected RPCError")
+        } catch let e as RPCError {
+            XCTAssertEqual(e.code, 3)
+        }
+    }
     func testCountStream() async throws {
         let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
         let t = URLSessionTransport(base: base)
