@@ -18,6 +18,7 @@ let package = Package(
             .product(name: "NIOHTTP1", package: "swift-nio"),
             .product(name: "AsyncHTTPClient", package: "async-http-client"),
         ], path: "Sources/easyRpc"),
-        .testTarget(name: "easyRpcTests", dependencies: ["easyRpc"], path: "Tests/easyRpcTests"),
+        .testTarget(name: "easyRpcTests", dependencies: ["easyRpc"], path: "Tests/easyRpcTests",
+                    resources: [.copy("Resources/wire-vectors.json")]),
     ]
 )
