@@ -25,7 +25,9 @@ public struct AsyncHTTPClientTransport: Transport, Sendable {
 
     public func send(_ req: Request) async throws -> Response {
         var headers = HTTPHeaders()
-        headers.add(name: "content-type", value: "application/proto")
+        if !req.headers.keys.contains(where: { $0.lowercased() == "content-type" }) {
+            headers.add(name: "content-type", value: "application/proto")
+        }
         for (k, vs) in req.headers {
             for v in vs { headers.add(name: k, value: v) }
         }
@@ -54,7 +56,9 @@ public struct AsyncHTTPClientTransport: Transport, Sendable {
 
     public func openStream(_ req: Request) async throws -> any Stream {
         var headers = HTTPHeaders()
-        headers.add(name: "content-type", value: "application/connect+proto")
+        if !req.headers.keys.contains(where: { $0.lowercased() == "content-type" }) {
+            headers.add(name: "content-type", value: "application/connect+proto")
+        }
         for (k, vs) in req.headers {
             for v in vs { headers.add(name: k, value: v) }
         }

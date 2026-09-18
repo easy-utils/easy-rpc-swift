@@ -16,7 +16,10 @@ public final class URLSessionTransport: Transport, @unchecked Sendable {
         var r = URLRequest(url: URL(string: _url(req.url))!)
         r.httpMethod = req.method
         r.httpBody = req.body
-        r.setValue("application/proto", forHTTPHeaderField: "content-type")
+        if !req.headers.keys.contains(where: { $0.lowercased() == "content-type" }) {
+            // Caller content-type wins (the JSON codec depends on it).
+            r.setValue("application/proto", forHTTPHeaderField: "content-type")
+        }
         for (k, vs) in req.headers { for v in vs { r.setValue(v, forHTTPHeaderField: k) } }
         let (data, resp) = try await session.data(for: r)
         let http = resp as! HTTPURLResponse
@@ -29,7 +32,10 @@ public final class URLSessionTransport: Transport, @unchecked Sendable {
         var r = URLRequest(url: URL(string: _url(req.url))!)
         r.httpMethod = req.method
         r.httpBody = req.body
-        r.setValue("application/connect+proto", forHTTPHeaderField: "content-type")
+        if !req.headers.keys.contains(where: { $0.lowercased() == "content-type" }) {
+            // Caller content-type wins (the JSON codec depends on it).
+            r.setValue("application/connect+proto", forHTTPHeaderField: "content-type")
+        }
         for (k, vs) in req.headers { for v in vs { r.setValue(v, forHTTPHeaderField: k) } }
         // URLSession.data buffers the whole body, but the SERVER now responds
         // 200 immediately and streams frames; on Linux URLSession buffers until
