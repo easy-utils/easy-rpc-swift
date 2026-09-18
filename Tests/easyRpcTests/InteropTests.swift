@@ -103,6 +103,40 @@ final class InteropTests: XCTestCase {
         }
     }
 
+    func testEchoBytesRoundTrip() async throws {
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let c = ConformanceServiceClient(transport(base))
+        let data = Data([0, 1, 2, 0xff, 0xfe, 0x80])
+        let out = try await c.echoBytes(req: Easyrpc_Conformance_V1_EchoBytesRequest.with { $0.data = data })
+        XCTAssertEqual(out.data, data)
+    }
+
+    func testEmptyRoundTrip() async throws {
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let c = ConformanceServiceClient(transport(base))
+        let out = try await c.empty(req: Easyrpc_Conformance_V1_EmptyRequest())
+        XCTAssertEqual(try out.serializedData().count, 0)
+    }
+
+    func testBigStreamManyFrames() async throws {
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let c = ConformanceServiceClient(transport(base))
+        let stream = try await c.bigStream(req: Easyrpc_Conformance_V1_BigStreamRequest.with {
+            $0.count = 4
+            $0.size = 2048
+        })
+        var idx: [Int] = []
+        for try await m in stream { idx.append(Int(m.index)) }
+        XCTAssertEqual(idx, [0, 1, 2, 3])
+    }
+
+    func testSleepReturnsOk() async throws {
+        let base = ProcessInfo.processInfo.environment["EASY_RPC_BASE"] ?? "http://127.0.0.1:18888"
+        let c = ConformanceServiceClient(transport(base))
+        let out = try await c.sleep(req: Easyrpc_Conformance_V1_SleepRequest.with { $0.millis = 0 })
+        XCTAssertTrue(out.ok)
+    }
+
     // ---- AsyncHTTPClient bridge (Linux/server side) ----
     // The locally-testable variant of the Swift bridge family (URLSession is
     // exercised by the tests above; AHC is the Linux/server adapter).

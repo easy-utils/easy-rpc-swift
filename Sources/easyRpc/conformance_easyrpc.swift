@@ -84,4 +84,32 @@ public final class ConformanceServiceClient {
     if let e = st.lastError() { throw e }
     cont.finish() } catch { cont.finish(throwing: error) } } } }
 
+  public func echoBytes(req: Easyrpc_Conformance_V1_EchoBytesRequest) async throws -> Easyrpc_Conformance_V1_EchoBytesResponse {
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/EchoBytes", body: try req.serializedData()))
+    self.lastTrailers = res.trailers
+    if let e = res.error { throw e }
+    return try Easyrpc_Conformance_V1_EchoBytesResponse(serializedBytes: res.body)
+  }
+
+  public func sleep(req: Easyrpc_Conformance_V1_SleepRequest) async throws -> Easyrpc_Conformance_V1_SleepResponse {
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Sleep", body: try req.serializedData()))
+    self.lastTrailers = res.trailers
+    if let e = res.error { throw e }
+    return try Easyrpc_Conformance_V1_SleepResponse(serializedBytes: res.body)
+  }
+
+  public func empty(req: Easyrpc_Conformance_V1_EmptyRequest) async throws -> Easyrpc_Conformance_V1_EmptyResponse {
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Empty", body: try req.serializedData()))
+    self.lastTrailers = res.trailers
+    if let e = res.error { throw e }
+    return try Easyrpc_Conformance_V1_EmptyResponse(serializedBytes: res.body)
+  }
+
+  public func bigStream(req: Easyrpc_Conformance_V1_BigStreamRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_BigStreamResponse, Error>
+  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/BigStream", body: frame(try req.serializedData())))
+    self.lastStream = st
+    while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_BigStreamResponse(serializedBytes: msg)) }
+    if let e = st.lastError() { throw e }
+    cont.finish() } catch { cont.finish(throwing: error) } } } }
+
 }
