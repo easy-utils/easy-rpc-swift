@@ -89,18 +89,19 @@ def main():
                  '  public var lastStream: (any Stream)?', '']
             for (svc, name, path, ss, it, ot) in methods:
                 if ss:
-                    L.append(f'  public func {camel(name)}(req: {pre}_{it}) async throws -> AsyncThrowingStream<{pre}_{ot}, Error>')
-                    L.append(f'  {{ AsyncThrowingStream {{ cont in Task {{ do {{ let st = try await t.openStream(Request(url: "{path}", body: frame(try req.serializedData())))')
+                    L.append(f'  public func {camel(name)}(req: {pre}_{it}, kind: String = "proto") async throws -> AsyncThrowingStream<{pre}_{ot}, Error>')
+                    L.append(f'  {{ AsyncThrowingStream {{ cont in Task {{ do {{ let ct = contentTypeFor(true, kind); let st = try await t.openStream(Request(url: "{path}", headers: ["content-type": [ct]], body: frame(try encodeMsg(req, kind))))')
                     L.append('    self.lastStream = st')
-                    L.append(f'    while let msg = await st.recv() {{ cont.yield(try {pre}_{ot}(serializedBytes: msg)) }}')
+                    L.append(f'    while let msg = await st.recv() {{ cont.yield(try decodeMsg(msg, {pre}_{ot}.self, kind)) }}')
                     L.append(f'    if let e = st.lastError() {{ throw e }}')
                     L.append(f'    cont.finish() }} catch {{ cont.finish(throwing: error) }} }} }} }}')
                 else:
-                    L.append(f'  public func {camel(name)}(req: {pre}_{it}) async throws -> {pre}_{ot} {{')
-                    L.append(f'    let res = try await t.send(Request(url: "{path}", body: try req.serializedData()))')
+                    L.append(f'  public func {camel(name)}(req: {pre}_{it}, kind: String = "proto") async throws -> {pre}_{ot} {{')
+                    L.append('    let ct = contentTypeFor(false, kind)')
+                    L.append(f'    let res = try await t.send(Request(url: "{path}", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))')
                     L.append('    self.lastTrailers = res.trailers')
                     L.append(f'    if let e = res.error {{ throw e }}')
-                    L.append(f'    return try {pre}_{ot}(serializedBytes: res.body)')
+                    L.append(f'    return try decodeMsg(res.body, {pre}_{ot}.self, kind)')
                     L.append('  }')
                 L.append('')
             L.append('}')

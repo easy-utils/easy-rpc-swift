@@ -259,6 +259,48 @@ public final class HandlerContext: @unchecked Sendable {
 
 public let contentTypeUnary = "application/proto"
 public let contentTypeStream = "application/connect+proto"
+public let contentTypeUnaryJson = "application/json"
+public let contentTypeStreamJson = "application/connect+json"
+
+/// Map a Content-Type to a codec ("proto" | "json"), or nil when unsupported.
+public func contentKindOf(_ contentType: String?) -> String? {
+    let ct = (contentType ?? "").split(separator: ";").first.map(String.init)?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+    switch ct {
+    case "application/proto", "application/connect+proto": return "proto"
+    case "application/json", "application/connect+json": return "json"
+    default: return nil
+    }
+}
+
+/// True when the content type denotes the streaming shape.
+public func isStreamContentType(_ contentType: String?) -> Bool {
+    let ct = (contentType ?? "").split(separator: ";").first.map(String.init)?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+    return ct == "application/connect+proto" || ct == "application/connect+json"
+}
+
+/// The response Content-Type for a shape + codec.
+public func contentTypeFor(_ stream: Bool, _ kind: String) -> String {
+    if kind == "json" { return stream ? contentTypeStreamJson : contentTypeUnaryJson }
+    return stream ? contentTypeStream : contentTypeUnary
+}
+
+/// Encode a SwiftProtobuf message in the given codec (JSON uses the canonical
+/// proto3 mapping: lowerCamelCase, bytes base64, Any `@type`).
+public func encodeMsg<M: SwiftProtobuf.Message>(_ msg: M, _ kind: String) throws -> Data {
+    if kind == "json" { return Data(try msg.jsonString().utf8) }
+    return try msg.serializedData()
+}
+
+/// Decode bytes into a SwiftProtobuf message in the given codec. JSON ignores
+/// unknown fields (matching Connect / protojson).
+public func decodeMsg<M: SwiftProtobuf.Message>(_ data: Data, _ type: M.Type, _ kind: String) throws -> M {
+    if kind == "json" {
+        var opts = JSONDecodingOptions()
+        opts.ignoreUnknownFields = true
+        return try M(jsonUTF8Bytes: data, options: opts)
+    }
+    return try M(serializedBytes: data)
+}
 
 /// Decode a Connect end-stream payload into (code, message, details);
 /// (0, "", nil) = clean end. Malformed input is a clean end (matrix M2); an

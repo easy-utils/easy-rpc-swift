@@ -7,108 +7,118 @@ public final class ConformanceServiceClient {
   public var lastTrailers: Headers = [:]
   public var lastStream: (any Stream)?
 
-  public func health(req: Easyrpc_Conformance_V1_HealthRequest) async throws -> Easyrpc_Conformance_V1_HealthResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Health", body: try req.serializedData()))
+  public func health(req: Easyrpc_Conformance_V1_HealthRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_HealthResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Health", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_HealthResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_HealthResponse.self, kind)
   }
 
-  public func echo(req: Easyrpc_Conformance_V1_EchoRequest) async throws -> Easyrpc_Conformance_V1_EchoResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Echo", body: try req.serializedData()))
+  public func echo(req: Easyrpc_Conformance_V1_EchoRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_EchoResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Echo", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_EchoResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_EchoResponse.self, kind)
   }
 
-  public func count(req: Easyrpc_Conformance_V1_CountRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_CountResponse, Error>
-  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/Count", body: frame(try req.serializedData())))
+  public func count(req: Easyrpc_Conformance_V1_CountRequest, kind: String = "proto") async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_CountResponse, Error>
+  { AsyncThrowingStream { cont in Task { do { let ct = contentTypeFor(true, kind); let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/Count", headers: ["content-type": [ct]], body: frame(try encodeMsg(req, kind))))
     self.lastStream = st
-    while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_CountResponse(serializedBytes: msg)) }
+    while let msg = await st.recv() { cont.yield(try decodeMsg(msg, Easyrpc_Conformance_V1_CountResponse.self, kind)) }
     if let e = st.lastError() { throw e }
     cont.finish() } catch { cont.finish(throwing: error) } } } }
 
-  public func fail(req: Easyrpc_Conformance_V1_FailRequest) async throws -> Easyrpc_Conformance_V1_FailResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Fail", body: try req.serializedData()))
+  public func fail(req: Easyrpc_Conformance_V1_FailRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_FailResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Fail", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_FailResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_FailResponse.self, kind)
   }
 
-  public func streamFail(req: Easyrpc_Conformance_V1_StreamFailRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_StreamFailResponse, Error>
-  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/StreamFail", body: frame(try req.serializedData())))
+  public func streamFail(req: Easyrpc_Conformance_V1_StreamFailRequest, kind: String = "proto") async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_StreamFailResponse, Error>
+  { AsyncThrowingStream { cont in Task { do { let ct = contentTypeFor(true, kind); let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/StreamFail", headers: ["content-type": [ct]], body: frame(try encodeMsg(req, kind))))
     self.lastStream = st
-    while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_StreamFailResponse(serializedBytes: msg)) }
+    while let msg = await st.recv() { cont.yield(try decodeMsg(msg, Easyrpc_Conformance_V1_StreamFailResponse.self, kind)) }
     if let e = st.lastError() { throw e }
     cont.finish() } catch { cont.finish(throwing: error) } } } }
 
-  public func echoMeta(req: Easyrpc_Conformance_V1_EchoMetaRequest) async throws -> Easyrpc_Conformance_V1_EchoMetaResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/EchoMeta", body: try req.serializedData()))
+  public func echoMeta(req: Easyrpc_Conformance_V1_EchoMetaRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_EchoMetaResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/EchoMeta", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_EchoMetaResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_EchoMetaResponse.self, kind)
   }
 
-  public func big(req: Easyrpc_Conformance_V1_BigRequest) async throws -> Easyrpc_Conformance_V1_BigResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Big", body: try req.serializedData()))
+  public func big(req: Easyrpc_Conformance_V1_BigRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_BigResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Big", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_BigResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_BigResponse.self, kind)
   }
 
-  public func failDetails(req: Easyrpc_Conformance_V1_FailDetailsRequest) async throws -> Easyrpc_Conformance_V1_FailDetailsResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/FailDetails", body: try req.serializedData()))
+  public func failDetails(req: Easyrpc_Conformance_V1_FailDetailsRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_FailDetailsResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/FailDetails", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_FailDetailsResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_FailDetailsResponse.self, kind)
   }
 
-  public func streamFailDetails(req: Easyrpc_Conformance_V1_StreamFailDetailsRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_StreamFailDetailsResponse, Error>
-  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/StreamFailDetails", body: frame(try req.serializedData())))
+  public func streamFailDetails(req: Easyrpc_Conformance_V1_StreamFailDetailsRequest, kind: String = "proto") async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_StreamFailDetailsResponse, Error>
+  { AsyncThrowingStream { cont in Task { do { let ct = contentTypeFor(true, kind); let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/StreamFailDetails", headers: ["content-type": [ct]], body: frame(try encodeMsg(req, kind))))
     self.lastStream = st
-    while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_StreamFailDetailsResponse(serializedBytes: msg)) }
+    while let msg = await st.recv() { cont.yield(try decodeMsg(msg, Easyrpc_Conformance_V1_StreamFailDetailsResponse.self, kind)) }
     if let e = st.lastError() { throw e }
     cont.finish() } catch { cont.finish(throwing: error) } } } }
 
-  public func echoTrailer(req: Easyrpc_Conformance_V1_EchoTrailerRequest) async throws -> Easyrpc_Conformance_V1_EchoTrailerResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/EchoTrailer", body: try req.serializedData()))
+  public func echoTrailer(req: Easyrpc_Conformance_V1_EchoTrailerRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_EchoTrailerResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/EchoTrailer", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_EchoTrailerResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_EchoTrailerResponse.self, kind)
   }
 
-  public func countTrailer(req: Easyrpc_Conformance_V1_CountTrailerRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_CountTrailerResponse, Error>
-  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/CountTrailer", body: frame(try req.serializedData())))
+  public func countTrailer(req: Easyrpc_Conformance_V1_CountTrailerRequest, kind: String = "proto") async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_CountTrailerResponse, Error>
+  { AsyncThrowingStream { cont in Task { do { let ct = contentTypeFor(true, kind); let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/CountTrailer", headers: ["content-type": [ct]], body: frame(try encodeMsg(req, kind))))
     self.lastStream = st
-    while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_CountTrailerResponse(serializedBytes: msg)) }
+    while let msg = await st.recv() { cont.yield(try decodeMsg(msg, Easyrpc_Conformance_V1_CountTrailerResponse.self, kind)) }
     if let e = st.lastError() { throw e }
     cont.finish() } catch { cont.finish(throwing: error) } } } }
 
-  public func echoBytes(req: Easyrpc_Conformance_V1_EchoBytesRequest) async throws -> Easyrpc_Conformance_V1_EchoBytesResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/EchoBytes", body: try req.serializedData()))
+  public func echoBytes(req: Easyrpc_Conformance_V1_EchoBytesRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_EchoBytesResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/EchoBytes", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_EchoBytesResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_EchoBytesResponse.self, kind)
   }
 
-  public func sleep(req: Easyrpc_Conformance_V1_SleepRequest) async throws -> Easyrpc_Conformance_V1_SleepResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Sleep", body: try req.serializedData()))
+  public func sleep(req: Easyrpc_Conformance_V1_SleepRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_SleepResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Sleep", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_SleepResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_SleepResponse.self, kind)
   }
 
-  public func empty(req: Easyrpc_Conformance_V1_EmptyRequest) async throws -> Easyrpc_Conformance_V1_EmptyResponse {
-    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Empty", body: try req.serializedData()))
+  public func empty(req: Easyrpc_Conformance_V1_EmptyRequest, kind: String = "proto") async throws -> Easyrpc_Conformance_V1_EmptyResponse {
+    let ct = contentTypeFor(false, kind)
+    let res = try await t.send(Request(url: "/easyrpc.conformance.v1.ConformanceService/Empty", headers: ["content-type": [ct]], body: try encodeMsg(req, kind)))
     self.lastTrailers = res.trailers
     if let e = res.error { throw e }
-    return try Easyrpc_Conformance_V1_EmptyResponse(serializedBytes: res.body)
+    return try decodeMsg(res.body, Easyrpc_Conformance_V1_EmptyResponse.self, kind)
   }
 
-  public func bigStream(req: Easyrpc_Conformance_V1_BigStreamRequest) async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_BigStreamResponse, Error>
-  { AsyncThrowingStream { cont in Task { do { let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/BigStream", body: frame(try req.serializedData())))
+  public func bigStream(req: Easyrpc_Conformance_V1_BigStreamRequest, kind: String = "proto") async throws -> AsyncThrowingStream<Easyrpc_Conformance_V1_BigStreamResponse, Error>
+  { AsyncThrowingStream { cont in Task { do { let ct = contentTypeFor(true, kind); let st = try await t.openStream(Request(url: "/easyrpc.conformance.v1.ConformanceService/BigStream", headers: ["content-type": [ct]], body: frame(try encodeMsg(req, kind))))
     self.lastStream = st
-    while let msg = await st.recv() { cont.yield(try Easyrpc_Conformance_V1_BigStreamResponse(serializedBytes: msg)) }
+    while let msg = await st.recv() { cont.yield(try decodeMsg(msg, Easyrpc_Conformance_V1_BigStreamResponse.self, kind)) }
     if let e = st.lastError() { throw e }
     cont.finish() } catch { cont.finish(throwing: error) } } } }
 
